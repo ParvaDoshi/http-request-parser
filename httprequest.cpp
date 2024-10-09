@@ -52,7 +52,8 @@ void HTTPRequest::parse_command(std::string &command_string){
 // whitespace stripped out.  It technically should also not include
 // any internal whitespace but we arent' checking for that.
 
-// The value is ALL the data after the :, including any whitespace!
+// The value is ALL the data after the :, excluding whitespace front
+// and back but including whitespace in the middle!
 HTTPHeader::HTTPHeader(std::string s){
   throw "Need to implement" + s;
 }
