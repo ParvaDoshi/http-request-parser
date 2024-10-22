@@ -1,59 +1,95 @@
-
 #include <iostream>
 #include <memory>
 #include <map>
 #include <vector>
 #include <algorithm>
-#include <ranges>
-
+#include <stdexcept> // for exceptions
+#include <cctype>    // for tolower
 #include "httprequest.hpp"
 
-// This is the heart of the HTTP parsing.
+// Custom exception for malformed requests
+class MalformedRequestException : public std::exception {
+public:
+    const char* what() const noexcept override {
+        return "Malformed Request: Missing end of headers \\r\\n\\r\\n";
+    }
+};
 
-// You should first take the request string and break it up
-// into substrings wherever there is a '\r\n' pair.  The 
-// easiest way to do this is to iterate through the entire input,
-// keeping track of the current character, where in the string you are
-// and the last character. When you get a '\n' when the previous was '\r',
-// you have found the end of the substring (well, 2 past the end 
-// the substring), allowing you to use std::string's substr function.
-//
-// But at the same time you shouldn't ever have a '\n' without a prior '\r', or 
-// a '\r' without a subsequent '\n', however this is something we are not going to
-// require you to check for.
-// 
-// (Note that substr takes the starting index and the length, so you will
-// want to keep track of the current index, the last start point, and possibly
-// the length as well).
+// Constructor for HTTPRequest, takes the full request string and parses it
+HTTPRequest::HTTPRequest(std::string request) {
+    size_t end_of_headers = request.find("\r\n\r\n");
 
-// Finally, if you have '\r\n\r\n' in a row that is the end of the headers and you
-// can use a break to exit the loop.  This ending must be present and if it isn't you
-// should raise a MalformedRequestException.  
+    // If we don't find the end of the headers, throw an exception
+    if (end_of_headers == std::string::npos) {
+        throw MalformedRequestException();
+    }
 
-// Anything past the \r\n\r\n is the "payload".
+    // Split the request into lines based on "\r\n"
+    std::string headers_part = request.substr(0, end_of_headers);
+    size_t pos = 0;
+    size_t line_end;
+    std::vector<std::string> lines;
 
-// Now that it is split up, you can then parse both the command (the first part)
-// and then the headers.
+    while ((line_end = headers_part.find("\r\n", pos)) != std::string::npos) {
+        lines.push_back(headers_part.substr(pos, line_end - pos));
+        pos = line_end + 2;  // Skip over \r\n
+    }
 
+    // Parse the command (first line)
+    if (!lines.empty()) {
+        parse_command(lines[0]);
+        lines.erase(lines.begin());
+    }
 
-HTTPRequest::HTTPRequest(std::string request){
-  throw "Need to implement!" + request;
+    // Parse each header line
+    for (const auto& line : lines) {
+        if (!line.empty()) {
+            headers.push_back(HTTPHeader(line));
+        }
+    }
+
+    // The part after the headers is the payload
+    payload = request.substr(end_of_headers + 4);  // Skip over \r\n\r\n
 }
 
-auto valid_commands = {"GET", "POST", "HEAD"};
+// Parses the command (first line of the request)
+void HTTPRequest::parse_command(std::string &command_string) {
+    std::istringstream iss(command_string);
+    std::string method, url, version;
 
-void HTTPRequest::parse_command(std::string &command_string){
-  throw "Need to implement!" + command_string;
-  
+    // Extract method, URL, and version from the command string
+    iss >> method >> url >> version;
+
+    // Check if the method is valid (GET, POST, HEAD)
+    if (std::find(valid_commands.begin(), valid_commands.end(), method) == valid_commands.end()) {
+        throw std::invalid_argument("Invalid HTTP method");
+    }
+
+    // Store method, url, and version in class variables
+    this->method = method;
+    this->url = url;
+    this->version = version;
 }
 
-// This is the portion for a header.  The name should be the
-// header name (the part before the :) in all lower case, and
-// whitespace stripped out.  It technically should also not include
-// any internal whitespace but we arent' checking for that.
+// Constructor for HTTPHeader, parses a single header line
+HTTPHeader::HTTPHeader(std::string s) {
+    size_t colon_pos = s.find(':');
+    if (colon_pos == std::string::npos) {
+        throw std::invalid_argument("Malformed Header: Missing ':'");
+    }
 
-// The value is ALL the data after the :, excluding whitespace front
-// and back but including whitespace in the middle!
-HTTPHeader::HTTPHeader(std::string s){
-  throw "Need to implement" + s;
+    // Extract the name (before the ':')
+    std::string name = s.substr(0, colon_pos);
+    // Convert to lowercase and remove whitespace
+    std::transform(name.begin(), name.end(), name.begin(), [](unsigned char c) { return std::tolower(c); });
+    name.erase(std::remove_if(name.begin(), name.end(), ::isspace), name.end());
+
+    // Extract the value (after the ':') and strip leading/trailing whitespace
+    std::string value = s.substr(colon_pos + 1);
+    value.erase(0, value.find_first_not_of(" \t"));  // Trim leading whitespace
+    value.erase(value.find_last_not_of(" \t") + 1);  // Trim trailing whitespace
+
+    // Store in class variables
+    this->name = name;
+    this->value = value;
 }
